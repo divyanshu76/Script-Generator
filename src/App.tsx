@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { GoogleGenAI, GenerateContentResponse, Modality, Type } from "@google/genai";
+
 import { motion, AnimatePresence } from "motion/react";
+import { AnimatedBackground, ParticleField } from "./AnimatedBackground";
+import { Footer } from "./Footer";
 import { 
   Sparkles, 
   Video, 
@@ -341,38 +343,25 @@ export default function App() {
     const targetLang = LANGUAGES.find(l => l.id === selectedLanguage)?.name || "English";
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Translate the following YouTube Shorts script into ${targetLang}. 
-Keep the same format and tone. 
-The output MUST be in ${targetLang}.
-
-Script to translate:
-Hook: ${script.hook}
-Main Script: ${script.mainScript}
-Ending Question: ${script.endingQuestion}
-
-Format:
-Hook: [Translated hook]
-Main Script: [Translated main script]
-Ending Question: [Translated ending question]`,
+      const response = await fetch('/api/ai/translate-script', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script, targetLanguage: targetLang }),
       });
-
-      const text = response.text || "";
-      const hookMatch = text.match(/Hook:\s*(.*)/i);
-      const mainScriptMatch = text.match(/Main Script:\s*([\s\S]*?)(?=Ending Question:|$)/i);
-      const endingQuestionMatch = text.match(/Ending Question:\s*(.*)/i);
-
-      if (hookMatch && mainScriptMatch && endingQuestionMatch) {
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error ${response.status}`);
+      }
+      const data = await response.json();
+      if (data.hook && data.mainScript && data.endingQuestion) {
         setScript({
-          hook: hookMatch[1].trim(),
-          mainScript: mainScriptMatch[1].trim(),
-          endingQuestion: endingQuestionMatch[1].trim(),
+          hook: data.hook.trim(),
+          mainScript: data.mainScript.trim(),
+          endingQuestion: data.endingQuestion.trim(),
         });
         setScriptLanguage(selectedLanguage);
       } else {
-        throw new Error("Failed to parse translation. Please try again.");
+        throw new Error("Failed to parse translation format.");
       }
     } catch (err: any) {
       setError(err.message || "Failed to translate script.");
@@ -398,30 +387,16 @@ Ending Question: [Translated ending question]`,
   const fetchTrendingTopics = async () => {
     setIsFetchingTrending(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const nicheName = NICHES.find(n => n.id === selectedNiche)?.name;
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Suggest 4 trending or popular YouTube Shorts topics for the ${nicheName} niche. 
-        For each topic, provide a short 1-sentence description that gives context on why it's trending or what the video should cover.
-        Return only a JSON array of objects with "title", "niche", and "description" properties.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                niche: { type: Type.STRING },
-                description: { type: Type.STRING }
-              },
-              required: ["title", "niche", "description"]
-            }
-          }
-        }
+      const response = await fetch('/api/ai/generate-trending-topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ niche: nicheName }),
       });
-      const data = JSON.parse(response.text || "[]");
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+      const data = await response.json();
       setTrendingTopics(data);
     } catch (err) {
       console.error("Failed to fetch trending topics", err);
@@ -444,46 +419,31 @@ Ending Question: [Translated ending question]`,
     setAudioUrl(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const languageName = LANGUAGES.find(l => l.id === selectedLanguage)?.name || "English";
       
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Write a high-retention YouTube Shorts script for a ${selectedAudience} audience in a ${selectedTone} storytelling style.
-The script MUST be written in ${selectedLanguage}.
-
-Topic: ${targetTopic}
-
-CRITICAL RULES for a TOTALLY HUMAN-LIKE output:
-- Write exactly as a passionate human storyteller speaking directly to a friend. It must NOT sound like an AI.
-- ABSOLUTELY NO generic AI phrases like "Buckle up", "Did you know", "Imagine a world", "In this video", "Let's dive in", "Welcome back", or "The truth is".
-- Start with a punchy, conversational hook. No formal or robotic introductions.
-- Use highly varied sentence structures: mix short, punchy fragments with longer, flowing sentences to create a natural rhythm.
-- Incorporate natural idioms, everyday conversational phrasing, and contractions (e.g., don't, can't, it's, wouldn't).
-- Embed subtle emotional cues and resonance. Focus on the "why" and the "feeling" to genuinely connect with the viewer.
-- Use natural pauses, rhetorical questions, and emotional beats.
-- Keep the language accessible but the storytelling sophisticated and surprising.
-- End with a question that actually sparks debate or genuine curiosity.
-- Tone: ${selectedTone}
-- Target Audience: ${selectedAudience}
-- No hashtags, no emojis, no intros, no outro music cues.
-
-Format:
-Hook: [The hook in ${selectedLanguage}]
-Main Script: [The main script in ${selectedLanguage}]
-Ending Question: [The ending question in ${selectedLanguage}]`,
+      const response = await fetch('/api/ai/generate-script', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: targetTopic,
+          tone: selectedTone,
+          audience: selectedAudience,
+          language: languageName
+        })
       });
 
-      const text = response.text || "";
-      const hookMatch = text.match(/Hook:\s*(.*)/i);
-      const mainScriptMatch = text.match(/Main Script:\s*([\s\S]*?)(?=Ending Question:|$)/i);
-      const endingQuestionMatch = text.match(/Ending Question:\s*(.*)/i);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error ${response.status}`);
+      }
 
-      if (hookMatch && mainScriptMatch && endingQuestionMatch) {
+      const data = await response.json();
+
+      if (data.hook && data.mainScript && data.endingQuestion) {
         setScript({
-          hook: hookMatch[1].trim(),
-          mainScript: mainScriptMatch[1].trim(),
-          endingQuestion: endingQuestionMatch[1].trim(),
+          hook: data.hook.trim(),
+          mainScript: data.mainScript.trim(),
+          endingQuestion: data.endingQuestion.trim(),
         });
         setScriptLanguage(selectedLanguage);
       } else {
@@ -515,34 +475,26 @@ Ending Question: [The ending question in ${selectedLanguage}]`,
     setIsGeneratingImage(true);
     setError(null);
     try {
-      // Use the environment key for free models
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const prompt = `A cinematic, high-quality documentary-style thumbnail image for a video about: ${topic}. 
-Visual style: Professional photography, dramatic lighting, high detail. 
-Context: ${script.hook}`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [{ text: prompt }],
-        },
-        config: {
-          imageConfig: {
-            aspectRatio: aspectRatio as any,
-          }
-        },
+      const response = await fetch('/api/ai/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: topic,
+          hook: script.hook,
+          aspectRatio: aspectRatio
+        })
       });
 
-      let foundImage = false;
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) {
-          setImageUrl(`data:image/png;base64,${part.inlineData.data}`);
-          foundImage = true;
-          break;
-        }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error ${response.status}`);
       }
 
-      if (!foundImage) {
+      const data = await response.json();
+      
+      if (data.imageUrl) {
+        setImageUrl(data.imageUrl);
+      } else {
         throw new Error("No image was generated. Please try again.");
       }
     } catch (err: any) {
@@ -559,58 +511,37 @@ Context: ${script.hook}`;
     setAudioUrl(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const fullText = `${script.hook}. ${script.mainScript}. ${script.endingQuestion}`;
       const languageName = LANGUAGES.find(l => l.id === selectedLanguage)?.name || "English";
       
-      const [voiceName, voiceStyle] = selectedVoice.split('-');
-      const speedLabel = VOICE_SPEEDS.find(s => s.id === selectedSpeed)?.name || "Normal";
-      
-      const prompt = `Read the following script fluently in ${languageName}. 
-CRITICAL: You must use the correct native accent, pronunciation, and intonation for ${languageName}. If the language is Hindi, ensure proper Hindi diction and emotional delivery.
-Voice Style: ${voiceStyle || "Professional Narrator"}
-Pacing: ${speedLabel} (${selectedSpeed}x speed)
-Tone: ${selectedTone}
-Target Audience: ${selectedAudience}
-
-Script:
-${fullText}`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: prompt }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: voiceName as any },
-            },
-          },
+      const response = await fetch('/api/ai/generate-audio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
         },
+        body: JSON.stringify({
+          text: fullText,
+          voice: selectedVoice,
+          language: languageName,
+          tone: selectedTone
+        })
       });
 
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        const binary = atob(base64Audio);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i);
-        }
-        
-        // Convert to Int16Array for WAV encoding
-        const samples = new Int16Array(bytes.buffer);
-        const wavBuffer = encodeWAV(samples, 24000);
-        const blob = new Blob([wavBuffer], { type: 'audio/wav' });
-        const url = URL.createObjectURL(blob);
-        setAudioUrl(url);
-        
-        setTimeout(() => {
-          if (audioRef.current) {
-            audioRef.current.load();
-            audioRef.current.play().catch(e => console.log("Auto-play blocked", e));
-          }
-        }, 100);
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to generate audio.");
       }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setAudioUrl(url);
+      
+      setTimeout(() => {
+        if (audioRef.current) {
+          audioRef.current.load();
+          audioRef.current.play().catch(e => console.log("Auto-play blocked", e));
+        }
+      }, 100);
     } catch (err: any) {
       setError(err.message || "Failed to generate audio.");
     } finally {
@@ -632,8 +563,26 @@ ${fullText}`;
     URL.revokeObjectURL(url);
   };
 
+  const getAspectClassName = (ratio: string) => {
+    switch (ratio) {
+      case '1:1': return 'aspect-square';
+      case '9:16': return 'aspect-[9/16]';
+      case '16:9': return 'aspect-video';
+      case '3:4': return 'aspect-[3/4]';
+      case '4:3': return 'aspect-[4/3]';
+      default: return 'aspect-square';
+    }
+  };
+
+  const getImageDownloadName = () => {
+    const safeTopic = topic.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').toLowerCase();
+    const safeRatio = aspectRatio.replace(':', 'x');
+    return `script-generator-${safeTopic}-${safeRatio}.png`;
+  };
+
   return (
-    <div className={`min-h-screen transition-colors duration-300 font-sans selection:bg-blue-500/30 ${theme === "dark" ? "bg-[#0a0a0a] text-white" : "bg-gray-50 text-gray-900"}`}>
+    <div className={`relative min-h-screen transition-colors duration-300 font-sans selection:bg-blue-500/30 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+      <AnimatedBackground theme={theme} />
       {/* Theme Toggle */}
       <div className="fixed top-6 right-6 z-50">
         <button
@@ -653,8 +602,16 @@ ${fullText}`;
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
+          className="text-center mb-12 relative"
         >
+          {/* Ambient Glow behind Hero */}
+          <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[120%] blur-[80px] pointer-events-none -z-10 ${
+            theme === 'dark' ? 'bg-indigo-500/15' : 'bg-blue-300/20'
+          }`} />
+          {/* Denser particle concentration for Hero */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[150%] pointer-events-none -z-10 overflow-hidden" style={{ maskImage: 'radial-gradient(ellipse at center, black 20%, transparent 70%)', WebkitMaskImage: 'radial-gradient(ellipse at center, black 20%, transparent 70%)' }}>
+            <ParticleField theme={theme} prefersReducedMotion={false} density="high" />
+          </div>
           <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium mb-4 ${
             theme === "dark" ? "bg-blue-500/10 border border-blue-500/20 text-blue-400" : "bg-blue-50 text-blue-600 border border-blue-100"
           }`}>
@@ -674,7 +631,7 @@ ${fullText}`;
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Sidebar: Trending Topics */}
           <div className="lg:col-span-3 space-y-6">
-            <div className={`${theme === "dark" ? "bg-[#141414] border-white/5" : "bg-white border-gray-200 shadow-sm"} border rounded-2xl p-6`}>
+            <div className={`${theme === "dark" ? "bg-[#141418]/65 backdrop-blur-xl border-white/10" : "bg-white/70 backdrop-blur-xl border-slate-900/10 shadow-sm"} border rounded-2xl p-6`}>
               <div className="flex items-center gap-2 mb-6 text-blue-400">
                 <TrendingUp className="w-5 h-5" />
                 <h2 className="font-bold text-lg">Trending Topics</h2>
@@ -736,7 +693,7 @@ ${fullText}`;
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`${theme === "dark" ? "bg-[#141414] border-white/5" : "bg-white border-gray-200 shadow-xl"} border rounded-2xl p-8`}
+              className={`${theme === "dark" ? "bg-[#141418]/65 backdrop-blur-xl border-white/10" : "bg-white/70 backdrop-blur-xl border-slate-900/10 shadow-xl"} border rounded-2xl p-8`}
             >
               <div className="flex flex-col gap-4">
                 <label htmlFor="topic" className="text-sm font-medium text-gray-400 uppercase tracking-wider">
@@ -836,7 +793,7 @@ ${fullText}`;
                   className="grid grid-cols-1 xl:grid-cols-2 gap-8"
                 >
                   {/* Script & Audio Card */}
-                  <div className={`${theme === "dark" ? "bg-[#141414] border-white/5" : "bg-white border-gray-200 shadow-xl"} border rounded-2xl p-8 flex flex-col gap-6`}>
+                  <div className={`${theme === "dark" ? "bg-[#141418]/65 backdrop-blur-xl border-white/10" : "bg-white/70 backdrop-blur-xl border-slate-900/10 shadow-xl"} border rounded-2xl p-8 flex flex-col gap-6`}>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div className="flex items-center gap-2 text-blue-400">
                         <FileText className="w-5 h-5" />
@@ -945,8 +902,8 @@ ${fullText}`;
                   </div>
 
                   {/* Media Preview Card */}
-                  <div className={`${theme === "dark" ? "bg-[#141414] border-white/5" : "bg-white border-gray-200 shadow-xl"} border rounded-2xl p-8 flex flex-col gap-6`}>
-                    <div className="flex items-center justify-between">
+                  <div className={`${theme === "dark" ? "bg-[#141418]/65 backdrop-blur-xl border-white/10" : "bg-white/70 backdrop-blur-xl border-slate-900/10 shadow-xl"} border rounded-2xl p-8 flex flex-col gap-6 relative overflow-hidden`}>
+                    <div className="flex items-center justify-between relative z-10">
                       <div className="flex items-center gap-2 text-purple-400">
                         <ImageIcon className="w-5 h-5" />
                         <h2 className="font-bold text-xl">Media Assets</h2>
@@ -971,14 +928,14 @@ ${fullText}`;
                             animate={{ opacity: 1 }}
                             className="w-full h-full flex flex-col"
                           >
-                            <div className="relative w-full aspect-video max-h-[300px] rounded-xl overflow-hidden bg-black shadow-2xl border border-white/10">
+                            <div className={`relative w-full ${getAspectClassName(aspectRatio)} max-h-[400px] mx-auto rounded-xl overflow-hidden bg-black/50 shadow-2xl border border-white/10`}>
                               <img src={imageUrl} alt="Generated Thumbnail" className="w-full h-full object-contain" />
                             </div>
                             <div className="mt-6 flex gap-3">
                               <a 
                                 href={imageUrl} 
-                                download="thumbnail.png"
-                                className="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition-all flex items-center justify-center gap-2"
+                                download={getImageDownloadName()}
+                                className="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-600/20"
                               >
                                 <Download className="w-4 h-4" />
                                 Download Image
@@ -1020,9 +977,15 @@ ${fullText}`;
                               <ImageIcon className={`w-8 h-8 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
                             </div>
                             <div className="space-y-4">
-                              <p className="text-gray-500 text-sm">No thumbnail generated yet.</p>
+                              <p className="text-gray-500 text-sm">Your visual will appear here</p>
+                              {error && error.includes("generate image") && (
+                                <div className="text-red-500 text-sm bg-red-500/10 py-2 px-4 rounded-lg border border-red-500/20 inline-block">
+                                  {error}
+                                </div>
+                              )}
                               <button
                                 onClick={generateImage}
+                                disabled={isGeneratingImage}
                                 className="px-8 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition-all shadow-lg shadow-purple-600/20 flex items-center gap-2 mx-auto"
                               >
                                 <Sparkles className="w-4 h-4" />
@@ -1051,7 +1014,7 @@ ${fullText}`;
                   { icon: ImageIcon, title: "Cinematic Visuals", desc: "AI-generated documentary style thumbnails." },
                   { icon: Mic2, title: "AI Voiceovers", desc: "Professional narration in multiple languages." }
                 ].map((feature, i) => (
-                  <div key={i} className={`p-6 rounded-2xl border text-center ${theme === 'dark' ? 'bg-[#141414] border-white/5' : 'bg-white border-gray-200 shadow-sm'}`}>
+                  <div key={i} className={`p-6 rounded-2xl border text-center ${theme === 'dark' ? 'bg-[#141418]/65 backdrop-blur-xl border-white/10' : 'bg-white/70 backdrop-blur-xl border-slate-900/10 shadow-sm'}`}>
                     <feature.icon className="w-8 h-8 text-blue-500 mx-auto mb-4" />
                     <h3 className={`font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{feature.title}</h3>
                     <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-600'}`}>{feature.desc}</p>
@@ -1062,6 +1025,7 @@ ${fullText}`;
           </div>
         </div>
       </div>
+      <Footer theme={theme} />
       <style>{`
         .custom-scrollbar::-webkit-scrollbar {
           display: none;
